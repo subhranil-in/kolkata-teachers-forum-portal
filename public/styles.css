@@ -6,3 +6,20 @@
 :root{--navy:#13243a;--blue:#2456a6;--teal:#087f78;--ink:#1d2c40;--muted:#68788d;--line:#e4eaf1;--bg:#f5f7fb}
 body{background:var(--bg)}.topbar{padding-left:max(5vw,22px);padding-right:max(5vw,22px)}.logo{background:linear-gradient(145deg,#152b48,#2876a8);border-radius:14px;box-shadow:0 7px 18px #15395b25;font-family:Manrope,sans-serif}.brand{letter-spacing:-.2px}.hero{background:radial-gradient(circle at 84% 20%,#d9f0eb 0,transparent 29%),linear-gradient(115deg,#edf3fb,#f8fbff 58%,#eaf5f2)}.hero-card{box-shadow:0 20px 50px #10243b12;border-color:#dce7f0}.btn{background:var(--blue);border-color:var(--blue);box-shadow:0 5px 13px #2456a61b}.btn-outline{box-shadow:none}.plan{box-shadow:0 12px 32px #10243b09}.plan.featured{border-color:#68b7ad;box-shadow:0 16px 40px #087f7816}.form-wrap{background:#fff;border:1px solid var(--line);border-radius:18px;padding:32px;box-shadow:0 18px 45px #10243b0b}.form-wrap h1,.dashboard h1{font:800 clamp(28px,4vw,38px)/1.2 Manrope,sans-serif;color:var(--navy)}.dashboard{max-width:1160px}.dashboard>h1{margin:10px 0}.panel{box-shadow:0 10px 30px #10243b08}.panel h2{font:700 19px Manrope,sans-serif;color:var(--navy);margin:23px 0 13px}.panel h2:first-child{margin-top:0}.side{height:max-content;position:sticky;top:18px}.side a{font-size:13px}.stat{border:1px solid #e8eef4;background:#f8fafc}.stat strong{font-size:20px}.top-actions{display:flex;gap:14px;align-items:center}.btn-small{padding:6px 10px;font-size:12px;margin:2px}.btn-danger{background:#fff1f0;color:#a83232;border-color:#f1ceca;box-shadow:none}.list-row{display:flex;justify-content:space-between;gap:14px;align-items:center;padding:13px 2px;border-bottom:1px solid var(--line)}.table-wrap{overflow-x:auto}.table{min-width:650px}.table td{vertical-align:top}.notice{background:#f2f7ff;border-color:#dbe8f7;color:#355574}.form-wrap .notice{margin:18px 0}.form-wrap input:focus,.form-wrap select:focus,.panel input:focus,.panel select:focus,.panel textarea:focus{outline:3px solid #2456a61b;border-color:#6e93c8}
 @media(max-width:800px){.form-wrap{margin:24px 12px;padding:23px 18px}.side{position:static}.top-actions [data-auth-email]{display:none}.dashboard{margin:24px auto}.table-wrap{margin-right:-10px}}
+/* Fix invisible button labels */
+.btn,
+a.btn,
+a.btn:visited,
+.btn-light,
+.btn-outline {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.btn-light,
+.btn-outline {
+  background: var(--blue) !important;
+  border-color: var(--blue) !important;
+}
