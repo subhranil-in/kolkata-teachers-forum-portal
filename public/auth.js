@@ -23,7 +23,7 @@
   location.pathname.endsWith('/admin')
 ) {
       if (!user) location.href = '/login.html';
-      else if (location.pathname.endsWith('/dashboard.html')) loadDashboard();
+      else if (location.pathname.endsWith('/dashboard.html') || location.pathname.endsWith('/dashboard')) loadDashboard();
       else loadAdmin();
     }
   });
