@@ -1,3 +1,4 @@
+
 (() => {
   const config = window.KTF_FIREBASE_CONFIG || {};
 
@@ -93,6 +94,28 @@
 
       if (member) {
         member.textContent = d.member?.fullName || 'Member';
+      }
+
+      // Populate the member profile form.
+      const profileFullName = document.querySelector('#profileFullName');
+      const profileBusinessName = document.querySelector('#profileBusinessName');
+      const profileEmail = document.querySelector('#profileEmail');
+      const profilePhone = document.querySelector('#profilePhone');
+
+      if (profileFullName) {
+        profileFullName.value = d.member?.fullName || '';
+      }
+
+      if (profileBusinessName) {
+        profileBusinessName.value = d.member?.businessName || '';
+      }
+
+      if (profileEmail) {
+        profileEmail.value = d.member?.email || auth.currentUser?.email || '';
+      }
+
+      if (profilePhone) {
+        profilePhone.value = d.member?.phone || '';
       }
 
       const status =
@@ -440,6 +463,67 @@
     auth.signOut().then(() => {
       location.href = '/';
     });
+  });
+
+  // Save member profile
+  document.querySelector('#profileForm')?.addEventListener('submit', async e => {
+    e.preventDefault();
+
+    const form = e.currentTarget;
+    const fullName = form.elements.fullName.value.trim();
+    const businessName = form.elements.businessName.value.trim();
+    const phone = form.elements.phone.value.trim();
+    const button = form.querySelector('button[type="submit"]');
+
+    try {
+      if (fullName.length < 2 || businessName.length < 2) {
+        throw new Error('Please enter valid name and business details.');
+      }
+
+      if (!/^\+?[0-9]{10,15}$/.test(phone)) {
+        throw new Error('Enter a valid mobile number with 10 to 15 digits.');
+      }
+
+      button.disabled = true;
+      button.textContent = 'Saving…';
+      show('#profileMessage', 'Updating your profile…');
+
+      const result = await api('/api/me/profile', {
+        method: 'POST',
+        body: JSON.stringify({
+          fullName,
+          businessName,
+          phone
+        })
+      });
+
+      const updatedMember = result.member || {};
+
+      if (updatedMember.fullName) {
+        const memberName = document.querySelector('#memberName');
+        if (memberName) memberName.textContent = updatedMember.fullName;
+      }
+
+      if (updatedMember.fullName) {
+        form.elements.fullName.value = updatedMember.fullName;
+      }
+
+      if (updatedMember.businessName) {
+        form.elements.businessName.value = updatedMember.businessName;
+      }
+
+      if (updatedMember.phone) {
+        form.elements.phone.value = updatedMember.phone;
+      }
+
+      show('#profileMessage', result.message || 'Your profile has been updated successfully.');
+
+    } catch (err) {
+      show('#profileMessage', 'Profile update failed: ' + err.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Save profile changes';
+    }
   });
 
   // Advertisement submission
