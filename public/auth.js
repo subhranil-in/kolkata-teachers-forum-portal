@@ -16,7 +16,12 @@
   const selectedPlan = new URLSearchParams(location.search).get('plan'); if (selectedPlan && document.querySelector('#checkoutPlan option[value="'+selectedPlan+'"]')) document.querySelector('#checkoutPlan').value = selectedPlan;
   auth.onAuthStateChanged(user => {
     document.querySelectorAll('[data-auth-email]').forEach(el => el.textContent = user?.email || 'Not signed in');
-    if (location.pathname.endsWith('/dashboard.html') || location.pathname.endsWith('/admin.html')) {
+    if (
+  location.pathname.endsWith('/dashboard.html') ||
+  location.pathname.endsWith('/dashboard') ||
+  location.pathname.endsWith('/admin.html') ||
+  location.pathname.endsWith('/admin')
+) {
       if (!user) location.href = '/login.html';
       else if (location.pathname.endsWith('/dashboard.html')) loadDashboard();
       else loadAdmin();
