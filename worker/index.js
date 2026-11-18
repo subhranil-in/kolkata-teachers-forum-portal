@@ -9,7 +9,15 @@ const PLANS = {
 };
 const CORS_HEADERS = { 'access-control-allow-headers': 'content-type,authorization', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'vary': 'Origin' };
 const json = (data, status = 200, origin = '') => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...CORS_HEADERS, 'access-control-allow-origin': origin || 'null' } });
-const html = (body, status = 200) => new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
+const html = (body, status = 200, origin = '') => new Response(body, {
+  status,
+  headers: {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+    ...CORS_HEADERS,
+    'access-control-allow-origin': origin || 'null'
+  }
+}); => new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
 const sha512 = async value => [...new Uint8Array(await crypto.subtle.digest('SHA-512', enc.encode(value)))].map(x => x.toString(16).padStart(2, '0')).join('');
 const safeEqual = (a, b) => { if (!a || !b || a.length !== b.length) return false; let v = 0; for (let i = 0; i < a.length; i++) v |= a.charCodeAt(i) ^ b.charCodeAt(i); return v === 0; };
 const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -173,7 +181,7 @@ export default {
       ]);
       const fields={key:env.PAYU_KEY,txnid,amount:plan.amount,productinfo:plan.name,firstname,email,phone:m.phone,si:'1',si_details:siDetails,api_version:'7',surl:`${env.API_ORIGIN || env.WORKER_ORIGIN || new URL(request.url).origin}/api/payu/return`,furl:`${env.API_ORIGIN || env.WORKER_ORIGIN || new URL(request.url).origin}/api/payu/return`,hash};
       const inputs=Object.entries(fields).map(([k,v])=>`<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(v)}">`).join('');
-      return html(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Redirecting to PayU</title></head><body><p>Redirecting securely to PayU…</p><form id="p" method="post" action="${payuEndpoint(env)}">${inputs}<noscript><button>Continue</button></noscript></form><script>document.getElementById('p').submit()</script></body></html>`);
+      return html(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Redirecting to PayU</title></head><body><p>Redirecting securely to PayU…</p><form id="p" method="post" action="${payuEndpoint(env)}">${inputs}<noscript><button>Continue</button></noscript></form><script>document.getElementById('p').submit()</script></body></html>`, 200, origin);
     }
     return json({ error:'API endpoint not found' },404,origin);
   } catch(e) { return json({ error:e.message || 'Request failed' },400,origin); }
