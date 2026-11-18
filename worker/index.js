@@ -628,6 +628,53 @@ export default {
       }
 
       if (
+        url.pathname === '/api/me/profile' &&
+        request.method === 'POST'
+      ) {
+        const m = await requireMember(user, env);
+        const b = await bodyJson(request);
+
+        const fullName = String(b.fullName || '').trim();
+        const business = String(b.businessName || '').trim();
+        const phone = String(b.phone || '').trim();
+
+        if (
+          fullName.length < 2 ||
+          fullName.length > 100 ||
+          business.length < 2 ||
+          business.length > 140 ||
+          !/^\+?[0-9]{10,15}$/.test(phone)
+        ) {
+          return json({
+            error: 'Enter a valid name, business name and mobile number.'
+          }, 400, origin);
+        }
+
+        await env.DB.prepare(
+          'UPDATE members SET full_name=?, business_name=?, phone=? WHERE id=? AND firebase_uid=?'
+        ).bind(
+          fullName,
+          business,
+          phone,
+          m.id,
+          user.uid
+        ).run();
+
+        const updated = await requireMember(user, env);
+
+        return json({
+          ok: true,
+          message: 'Profile updated successfully.',
+          member: {
+            fullName: updated.full_name,
+            businessName: updated.business_name,
+            email: updated.email,
+            phone: updated.phone
+          }
+        }, 200, origin);
+      }
+
+      if (
         url.pathname === '/api/me' &&
         request.method === 'GET'
       ) {
