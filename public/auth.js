@@ -22,17 +22,65 @@
       else loadAdmin();
     }
   });
-  async function loadDashboard() {
-    try {
-      const d = await api('/api/me');
-      const member = document.querySelector('#memberName'); if (member) member.textContent = d.member.fullName;
-      const status = d.subscriptions.find(s => s.status === 'ACTIVE') || d.subscriptions[0];
-      const values = { '#membershipStatus':status?.status || 'No membership', '#membershipPlan':status?.plan_name || '—', '#membershipExpiry':status?.current_period_end || '—' };
-      Object.entries(values).forEach(([sel,val])=>{const el=document.querySelector(sel);if(el)el.textContent=val;});
-      const ads = document.querySelector('#myAds'); if (ads) ads.innerHTML = d.advertisements.length ? d.advertisements.map(a=>`<div class="list-row"><div><b>${esc(a.title)}</b><div class="small muted">${esc(a.category)} · ${new Date(a.submitted_at).toLocaleDateString()}</div></div><span class="pill">${esc(a.status)}</span></div>`).join('') : '<p class="muted small">No advertisements submitted yet.</p>';
-      const pay = document.querySelector('#myPayments'); if (pay) pay.innerHTML = d.payments.length ? d.payments.map(p=>`<div class="list-row"><span>₹${(p.amount_paise/100).toFixed(2)}</span><span class="pill">${esc(p.status)}</span></div>`).join('') : '<p class="muted small">No payment records yet.</p>';
-    } catch(e) { show('#dashboardMessage',e.message); }
+
+async function loadDashboard() {
+  const ads = document.querySelector('#myAds');
+  const pay = document.querySelector('#myPayments');
+
+  try {
+    show('#dashboardMessage', 'Loading your account information…');
+
+    const d = await api('/api/me');
+
+    const member = document.querySelector('#memberName');
+    if (member) member.textContent = d.member?.fullName || 'Member';
+
+    const status = (d.subscriptions || []).find(s => s.status === 'ACTIVE') || (d.subscriptions || [])[0];
+
+    const values = {
+      '#membershipStatus': status?.status || 'No membership',
+      '#membershipPlan': status?.plan_name || '—',
+      '#membershipExpiry': status?.current_period_end || '—'
+    };
+
+    Object.entries(values).forEach(([sel, val]) => {
+      const el = document.querySelector(sel);
+      if (el) el.textContent = val;
+    });
+
+    if (ads) {
+      ads.innerHTML = (d.advertisements || []).length
+        ? d.advertisements.map(a => `
+            <div class="list-row">
+              <div>
+                <b>${esc(a.title)}</b>
+                <div class="small muted">${esc(a.category)} · ${new Date(a.submitted_at).toLocaleDateString()}</div>
+              </div>
+              <span class="pill">${esc(a.status)}</span>
+            </div>
+          `).join('')
+        : '<p class="muted small">No advertisements submitted yet.</p>';
+    }
+
+    if (pay) {
+      pay.innerHTML = (d.payments || []).length
+        ? d.payments.map(p => `
+            <div class="list-row">
+              <span>₹${(Number(p.amount_paise || 0) / 100).toFixed(2)}</span>
+              <span class="pill">${esc(p.status)}</span>
+            </div>
+          `).join('')
+        : '<p class="muted small">No payment records yet.</p>';
+    }
+
+    show('#dashboardMessage', '');
+  } catch (e) {
+    if (ads) ads.innerHTML = '<p class="muted small">Could not load advertisements.</p>';
+    if (pay) pay.innerHTML = '<p class="muted small">Could not load payment history.</p>';
+    show('#dashboardMessage', 'Dashboard error: ' + e.message);
   }
+}
+
   async function loadAdmin() {
     try {
       const o = await api('/api/admin/overview');
