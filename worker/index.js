@@ -338,6 +338,8 @@ async function settleConsent(p, env) {
       pending.id
     )
   ]);
+
+  return success ? 'success' : failed ? 'failed' : 'pending';
 }
 
 async function adminRoute(request, url, env, user, origin) {
@@ -507,27 +509,24 @@ export default {
       url.pathname === '/api/payu/return' &&
       request.method === 'POST'
     ) {
+      const dashboardUrl = new URL('/dashboard.html', env.APP_ORIGIN);
+
       try {
         const p = Object.fromEntries(await request.formData());
 
         if (!await verifyPayuPostback(p, env)) {
-          return html(
-            '<h1>Payment response could not be verified</h1><p>Please contact KTF support. Do not retry until the payment status is checked.</p>',
-            400
-          );
+          dashboardUrl.searchParams.set('payment', 'unverified');
+          return Response.redirect(dashboardUrl.toString(), 303);
         }
 
-        await settleConsent(p, env);
+        const paymentStatus = await settleConsent(p, env);
+        dashboardUrl.searchParams.set('payment', paymentStatus);
 
-        return Response.redirect(
-          `${env.APP_ORIGIN}/dashboard.html?payment=checking`,
-          303
-        );
+        return Response.redirect(dashboardUrl.toString(), 303);
       } catch (e) {
-        return html(
-          `<h1>Payment status pending verification</h1><p>${escapeHtml(e.message)}</p><p>Sign in to your KTF dashboard later to check the updated status.</p>`,
-          202
-        );
+        console.error('PayU return verification error:', e);
+        dashboardUrl.searchParams.set('payment', 'pending');
+        return Response.redirect(dashboardUrl.toString(), 303);
       }
     }
 
