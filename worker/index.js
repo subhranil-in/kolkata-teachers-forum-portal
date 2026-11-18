@@ -1,4 +1,3 @@
-
 /** KTF Member Portal API — Cloudflare Worker + D1 + Firebase Auth + PayU Hosted SI.
  * PayU automatic renewal execution is deliberately not enabled here: it requires
  * PayU to confirm API-managed SI vs Zion and provide the matching mandate/webhook spec.
@@ -242,7 +241,8 @@ async function verifyPayuPostback(p, env) {
   );
 }
 
-async function verifyPayuTransaction(txnid, env) {
+
+async function verifyPayuTransaction(txnid, env, allowMissing = false) {
   const hash = await sha512(
     `${env.PAYU_KEY}|verify_payment|${txnid}|${env.PAYU_SALT}`
   );
@@ -270,11 +270,13 @@ async function verifyPayuTransaction(txnid, env) {
   const detail = data.transaction_details?.[txnid];
 
   if (!detail) {
+    if (allowMissing) return null;
     throw new Error('PayU did not return a transaction record');
   }
 
   return detail;
 }
+
 
 async function settleConsent(p, env) {
   const pending = await env.DB.prepare(
@@ -642,7 +644,9 @@ export default {
           ).bind(m.id).all(),
 
           env.DB.prepare(
-            'SELECT p.id,p.amount_paise,p.status,p.created_at,s.plan_id FROM payments p JOIN subscriptions s ON s.id=p.subscription_id WHERE s.member_id=? ORDER BY p.created_at DESC LIMIT 30'
+            
+'SELECT p.id,p.amount_paise,p.status,p.created_at,s.plan_id,s.id AS subscription_id,s.payu_txnid FROM payments p JOIN subscriptions s ON s.id=p.subscription_id WHERE s.member_id=? ORDER BY p.created_at DESC LIMIT 30'
+
           ).bind(m.id).all()
         ]);
 
@@ -657,6 +661,195 @@ export default {
           advertisements: ads.results || [],
           payments: payments.results || []
         }, 200, origin);
+      }
+
+      const paymentStatusMatch = url.pathname.match(
+        /^\/api\/payments\/([0-9a-f-]+)\/check-status$/i
+      );
+
+      if (paymentStatusMatch && request.method === 'POST') {
+        if (!env.PAYU_KEY || !env.PAYU_SALT) {
+          return json({ error: 'PayU merchant secrets are not configured' }, 503, origin);
+        }
+
+        const m = await requireMember(user, env);
+        const payment = await env.DB.prepare(
+          'SELECT p.id,p.amount_paise,p.status,s.id AS subscription_id,s.plan_id,s.payu_txnid FROM payments p JOIN subscriptions s ON s.id=p.subscription_id WHERE p.id=? AND s.member_id=?'
+        ).bind(paymentStatusMatch[1], m.id).first();
+
+        if (!payment) {
+          return json({ error: 'Payment record not found' }, 404, origin);
+        }
+
+        if (!payment.payu_txnid) {
+          return json({
+            ok: false,
+            status: 'PENDING',
+            message: 'No PayU transaction reference is available. Your payment remains pending.'
+          }, 200, origin);
+        }
+
+        const detail = await verifyPayuTransaction(payment.payu_txnid, env, true);
+        if (!detail) {
+          return json({
+            ok: false,
+            status: 'PENDING',
+            message: 'PayU has no transaction record for this reference. Your payment remains pending.'
+          }, 200, origin);
+        }
+
+        const verifiedAmount = Number(detail.amt ?? detail.transaction_amount ?? detail.amount);
+        if (
+          String(detail.txnid || '') !== payment.payu_txnid ||
+          !Number.isFinite(verifiedAmount) ||
+          verifiedAmount.toFixed(2) !== (payment.amount_paise / 100).toFixed(2)
+        ) {
+          throw new Error('PayU transaction reference or amount does not match KTF records');
+        }
+
+        const payuStatus = String(detail.status || '').toLowerCase();
+        const success = ['success', 'captured'].includes(payuStatus);
+        const failed = ['failure', 'failed'].includes(payuStatus);
+        const paymentStatus = success ? 'SUCCESS' : failed ? 'FAILED' : 'PENDING';
+        const subscriptionStatus = success ? 'ACTIVE' : failed ? 'FAILED' : 'PENDING';
+        const payuId = String(detail.mihpayid || '');
+
+        await env.DB.batch([
+          env.DB.prepare(
+            'UPDATE payments SET status=?,provider_txn_id=?,raw_reference=? WHERE id=?'
+          ).bind(
+            paymentStatus,
+            payuId || null,
+            JSON.stringify({ status: detail.status, unmappedstatus: detail.unmappedstatus || null }),
+            payment.id
+          ),
+          env.DB.prepare(
+            'UPDATE subscriptions SET status=?,mandate_status=?,payu_mihpayid=? WHERE id=?'
+          ).bind(
+            subscriptionStatus,
+            success ? 'CONSENT_SUCCESS' : failed ? 'FAILED' : 'PENDING',
+            payuId || null,
+            payment.subscription_id
+          )
+        ]);
+
+        return json({
+          ok: true,
+          status: paymentStatus,
+          message: success
+            ? 'Payment verified successfully.'
+            : failed
+              ? 'PayU has confirmed that this payment failed.'
+              : 'PayU has not confirmed success or failure yet. Your payment remains pending.'
+        }, 200, origin);
+      }
+
+      const retryPaymentMatch = url.pathname.match(
+        /^\/api\/payments\/([0-9a-f-]+)\/retry$/i
+      );
+
+      if (retryPaymentMatch && request.method === 'POST') {
+        if (!env.PAYU_KEY || !env.PAYU_SALT || !env.APP_ORIGIN) {
+          return json({ error: 'PayU merchant secrets or APP_ORIGIN are not configured' }, 503, origin);
+        }
+
+        const m = await requireMember(user, env);
+        const oldPayment = await env.DB.prepare(
+          'SELECT p.id,p.amount_paise,p.status AS payment_status,s.id AS subscription_id,s.plan_id,s.status AS subscription_status,s.payu_txnid FROM payments p JOIN subscriptions s ON s.id=p.subscription_id WHERE p.id=? AND s.member_id=?'
+        ).bind(retryPaymentMatch[1], m.id).first();
+
+        if (!oldPayment) {
+          return json({ error: 'Payment record not found' }, 404, origin);
+        }
+
+        if (oldPayment.payment_status !== 'FAILED' || oldPayment.subscription_status !== 'FAILED') {
+          return json({ error: 'Retry is available only after PayU confirms that the previous payment failed.' }, 409, origin);
+        }
+
+        if (!oldPayment.payu_txnid) {
+          return json({ error: 'The previous payment has no PayU transaction reference and cannot be safely retried.' }, 409, origin);
+        }
+
+        const oldDetail = await verifyPayuTransaction(oldPayment.payu_txnid, env, true);
+        if (!oldDetail) {
+          return json({ error: 'PayU has no record of the previous transaction. It has not been verified as failed, so retry is blocked.' }, 409, origin);
+        }
+
+        const oldAmount = Number(oldDetail.amt ?? oldDetail.transaction_amount ?? oldDetail.amount);
+        const oldStatus = String(oldDetail.status || '').toLowerCase();
+        if (
+          String(oldDetail.txnid || '') !== oldPayment.payu_txnid ||
+          !Number.isFinite(oldAmount) ||
+          oldAmount.toFixed(2) !== (oldPayment.amount_paise / 100).toFixed(2) ||
+          !['failure', 'failed'].includes(oldStatus)
+        ) {
+          return json({ error: 'PayU has not independently confirmed this transaction as failed. Retry is blocked.' }, 409, origin);
+        }
+
+        const existing = await env.DB.prepare(
+          "SELECT id FROM subscriptions WHERE member_id=? AND plan_id=? AND status IN ('PENDING','ACTIVE') LIMIT 1"
+        ).bind(m.id, oldPayment.plan_id).first();
+        if (existing) {
+          return json({ error: 'A pending or active subscription already exists for this plan. Check its status before retrying.' }, 409, origin);
+        }
+
+        const plan = PLANS[oldPayment.plan_id];
+        if (!plan || plan.paise !== oldPayment.amount_paise) {
+          return json({ error: 'The original plan or amount could not be validated. Contact KTF support.' }, 409, origin);
+        }
+
+        const txnid = `KTF${Date.now()}${crypto.getRandomValues(new Uint32Array(1))[0].toString(16)}`.slice(0, 25);
+        const subId = uuid();
+        const paymentId = uuid();
+        const start = addDays(new Date(), plan.days);
+        const end = addDays(new Date(), 3650);
+        const siDetails = JSON.stringify({
+          billingAmount: plan.amount,
+          billingCurrency: 'INR',
+          billingCycle: plan.cycle,
+          billingInterval: plan.interval,
+          paymentStartDate: start,
+          paymentEndDate: end
+        });
+        const firstname = m.full_name.slice(0, 60);
+        const email = m.email;
+        const hash = await sha512(
+          `${env.PAYU_KEY}|${txnid}|${plan.amount}|${plan.name}|${firstname}|${email}|||||||||||${siDetails}|${env.PAYU_SALT}`
+        );
+
+        await env.DB.batch([
+          env.DB.prepare(
+            'INSERT INTO subscriptions(id,member_id,plan_id,payu_txnid,status,mandate_status) VALUES(?,?,?,? ,\'PENDING\',\'PENDING\')'
+          ).bind(subId, m.id, oldPayment.plan_id, txnid),
+          env.DB.prepare(
+            'INSERT INTO payments(id,subscription_id,amount_paise,status) VALUES(?,?,?,\'PENDING\')'
+          ).bind(paymentId, subId, plan.paise)
+        ]);
+
+        const fields = {
+          key: env.PAYU_KEY,
+          txnid,
+          amount: plan.amount,
+          productinfo: plan.name,
+          firstname,
+          email,
+          phone: m.phone,
+          si: '1',
+          si_details: siDetails,
+          api_version: '7',
+          surl: `${env.API_ORIGIN || env.WORKER_ORIGIN || new URL(request.url).origin}/api/payu/return`,
+          furl: `${env.API_ORIGIN || env.WORKER_ORIGIN || new URL(request.url).origin}/api/payu/return`,
+          hash
+        };
+        const inputs = Object.entries(fields)
+          .map(([k, v]) => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(v)}">`)
+          .join('');
+
+        return html(
+          `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Retrying payment</title></head><body><p>Redirecting securely to PayU…</p><form id="p" method="post" action="${payuEndpoint(env)}">${inputs}<noscript><button>Continue</button></noscript></form><script>document.getElementById('p').submit()</script></body></html>`,
+          200,
+          origin
+        );
       }
 
       if (
