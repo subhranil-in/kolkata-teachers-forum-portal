@@ -37,6 +37,16 @@
 
   window.KTF = { auth, api };
 
+  // Read the payment result returned by the verified PayU callback.
+  const paymentResult = new URLSearchParams(location.search).get('payment');
+
+  const paymentMessages = {
+    success: 'Payment successful! PayU has verified your payment.',
+    failed: 'Payment failed. PayU has confirmed that the transaction was unsuccessful. You can retry from Payment History.',
+    pending: 'Payment verification is pending. Please use Check Payment Status later.',
+    unverified: 'We could not verify the payment response. No success has been assumed. Please check your payment status or contact KTF support.'
+  };
+
   const selectedPlan = new URLSearchParams(location.search).get('plan');
 
   if (
@@ -242,7 +252,13 @@
         });
       }
 
-      show('#dashboardMessage', '');
+      // Show the verified payment result once, then remove the query string.
+      if (paymentResult && paymentMessages[paymentResult]) {
+        show('#dashboardMessage', paymentMessages[paymentResult]);
+        history.replaceState({}, document.title, location.pathname);
+      } else {
+        show('#dashboardMessage', '');
+      }
 
     } catch (e) {
       if (ads) {
